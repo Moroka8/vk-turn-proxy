@@ -34,13 +34,45 @@ import (
 type getCredsFunc func(string) (string, string, string, error)
 
 func getVkCreds(link string) (string, string, string, error) {
+
+	dnsServers := []string{"77.88.8.8:53", "77.88.8.1:53"}
+
 	doRequest := func(data string, url string) (resp map[string]interface{}, err error) {
+
+		resolver := &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				d := net.Dialer{
+					Timeout: 15 * time.Second,
+				}
+
+				for _, dnsServer := range dnsServers {
+					for i := 0; i < 3; i++ {
+						conn, err := d.DialContext(ctx, network, dnsServer)
+						if err == nil {
+							return conn, nil
+						}
+						time.Sleep(200 * time.Millisecond)
+					}
+				}
+
+				return d.DialContext(ctx, network, address)
+			},
+		}
+
+		dialer := &net.Dialer{
+			Timeout:   20 * time.Second,
+			KeepAlive: 30 * time.Second,
+			Resolver:  resolver,
+		}
+
 		client := &http.Client{
 			Timeout: 20 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 100,
 				IdleConnTimeout:     90 * time.Second,
+				DialContext:         dialer.DialContext,
 			},
 		}
 		defer client.CloseIdleConnections()

@@ -43,6 +43,10 @@ jobs:
             goarch: arm64
             cgo: 1
             api: 21
+          - goos: android
+            goarch: arm
+            cgo: 1
+            api: 21
           - goos: freebsd
             goarch: amd64
             cgo: 0

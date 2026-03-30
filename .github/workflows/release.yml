@@ -31,6 +31,17 @@ jobs:
             goarch: mipsle
             gomips: softfloat
             cgo: 0
+          - goos: linux
+            goarch: mips
+            gomips: softfloat
+            cgo: 0
+          - goos: linux
+            goarch: mips64le
+            gomips: softfloat
+            cgo: 0
+          - goos: linux
+            goarch: riscv64
+            cgo: 0            
           - goos: darwin
             goarch: amd64
             cgo: 0
@@ -39,6 +50,9 @@ jobs:
             cgo: 0
           - goos: windows
             goarch: amd64
+            cgo: 0
+          - goos: windows
+            goarch: arm64
             cgo: 0
           - goos: windows
             goarch: 386

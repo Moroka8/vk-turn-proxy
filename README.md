@@ -1,8 +1,16 @@
 # Good TURN
 
-Проброс трафика WireGuard/Hysteria через TURN сервера VK звонков или Яндекс телемоста. Пакеты шифруются DTLS 1.2, затем параллельными потоками через TCP или UDP отправляются на TURN сервер по протоколу STUN ChannelData. Оттуда по UDP отправляются на ваш сервер, где расшифровываются и передаются в WireGuard. Логин/пароль от TURN генерируются из ссылки на звонок.
+Проброс трафика WireGuard/Hysteria через TURN сервера VK звонков или ~~Яндекс телемоста~~. Пакеты шифруются DTLS 1.2, затем параллельными потоками через TCP или UDP отправляются на TURN сервер по протоколу STUN ChannelData. Оттуда по UDP отправляются на ваш сервер, где расшифровываются и передаются в WireGuard. Логин/пароль от TURN генерируются из ссылки на звонок.
 
 Только для учебных целей!
+
+## Похожие проекты
+- https://github.com/MYSOREZ/vk-turn-proxy-android - клиент для андроида
+- https://github.com/kiper292/wireguard-turn-android - клиент для андроида интегрированный в WireGuard
+- https://github.com/nullcstring/turnbridge - клиент для IOS
+- https://github.com/Urtyom-Alyanov/turn-proxy - реализация на Rust
+- https://github.com/jaykaiperson/lionheart - аналог для https://stream.wb.ru (статья: https://habr.com/ru/articles/1017410/)
+- https://github.com/kulikov0/whitelist-bypass - проброс через медиасервер SFU ВК и Яндекс Телемоста
 
 ## Настройка
 
@@ -45,7 +53,34 @@ curl -L -o server https://github.com/cacggghp/vk-turn-proxy/releases/latest/down
 # Запуск сервера
 ./server -listen 0.0.0.0:56000 -connect 127.0.0.1:<порт wg>
 ```
+#### Установка демона
+На сервере в файле `/etc/systemd/system/vk-turn-proxy.service`
+```
+[Unit]
+Description=VK Turn Proxy Service
+After=network.target
 
+[Service]
+Type=simple
+ExecStart=/opt/vk-turn-proxy/server-linux-amd64 -listen 0.0.0.0:56000 -connect 127.0.0.1:<wg_port>
+KillMode=process
+Restart=always
+RestartSec=5
+User=nobody
+Group=nogroup
+StandardOutput=append:/var/log/vk-turn-proxy/vk-turn-proxy.log
+StandardError=append:/var/log/vk-turn-proxy/vk-turn-proxy_error.log
+SyslogIdentifier=vk-turn-proxy
+
+[Install]
+WantedBy=multi-user.target
+```
+Где `/opt/vk-turn-proxy/server-linux-amd64` - путь к файлу, `<wg_port>` - порт сервера wg
+```
+systemctl daemon-reload
+systemctl enable vk-turn-proxy.service
+systemctl start vk-turn-proxy.service
+```
 #### Docker
 
 Образ Docker публикуется в GitHub Container Registry:
@@ -129,6 +164,8 @@ curl -L -o client https://github.com/cacggghp/vk-turn-proxy/releases/latest/down
 
 **Если после включения VPN в терминале вылезают ошибки DNS, попробуйте в Wireguard включить VPN только для нужных приложений.**
 
+#### IOS
+- https://github.com/cacggghp/vk-turn-proxy/issues/76
 #### Linux
 
 В клиентском конфиге WireGuard меняем адрес сервера на `127.0.0.1:9000`, ставим MTU 1280

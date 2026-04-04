@@ -52,14 +52,17 @@ func (d *DtlsPacketConn) SetWriteDeadline(t time.Time) error {
 func NewKCPOverDTLS(dtlsConn net.Conn, isServer bool) (*kcp.UDPSession, error) {
 	pc := NewDtlsPacketConn(dtlsConn)
 
-	block, _ := kcp.NewNoneBlockCrypt(nil) // DTLS already encrypts
+	block, err := kcp.NewNoneBlockCrypt(nil) // DTLS already encrypts
+	if err != nil {
+		return nil, err
+	}
 
 	var sess *kcp.UDPSession
-	var err error
 
 	if isServer {
 		// Server: listen on the PacketConn and accept one session
-		listener, err := kcp.ServeConn(block, 0, 0, pc)
+		var listener *kcp.Listener
+		listener, err = kcp.ServeConn(block, 0, 0, pc)
 		if err != nil {
 			return nil, err
 		}

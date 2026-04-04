@@ -148,18 +148,33 @@ type vkCaptchaError struct {
 	ErrorCode      int
 	ErrorMsg       string
 	CaptchaSid     string
-	RedirectUri    string
+	RedirectURI    string
 	SessionToken   string
 	CaptchaTs      string
 	CaptchaAttempt string
 }
 
 func parseVkCaptchaError(errData map[string]interface{}) *vkCaptchaError {
-	codeFloat, _ := errData["error_code"].(float64)
-	redirectUri, _ := errData["redirect_uri"].(string)
-	errorMsg, _ := errData["error_msg"].(string)
+	var codeFloat float64
+	if val, ok := errData["error_code"].(float64); ok {
+		codeFloat = val
+	}
 
-	captchaSid, _ := errData["captcha_sid"].(string)
+	var redirectURI string
+	if val, ok := errData["redirect_uri"].(string); ok {
+		redirectURI = val
+	}
+
+	var errorMsg string
+	if val, ok := errData["error_msg"].(string); ok {
+		errorMsg = val
+	}
+
+	var captchaSid string
+	if val, ok := errData["captcha_sid"].(string); ok {
+		captchaSid = val
+	}
+
 	if captchaSid == "" {
 		if sidNum, ok := errData["captcha_sid"].(float64); ok {
 			captchaSid = fmt.Sprintf("%.0f", sidNum)
@@ -167,8 +182,8 @@ func parseVkCaptchaError(errData map[string]interface{}) *vkCaptchaError {
 	}
 
 	var sessionToken string
-	if redirectUri != "" {
-		if parsed, err := neturl.Parse(redirectUri); err == nil {
+	if redirectURI != "" {
+		if parsed, err := neturl.Parse(redirectURI); err == nil {
 			sessionToken = parsed.Query().Get("session_token")
 		}
 	}
@@ -191,7 +206,7 @@ func parseVkCaptchaError(errData map[string]interface{}) *vkCaptchaError {
 		ErrorCode:      int(codeFloat),
 		ErrorMsg:       errorMsg,
 		CaptchaSid:     captchaSid,
-		RedirectUri:    redirectUri,
+		RedirectURI:    redirectURI,
 		SessionToken:   sessionToken,
 		CaptchaTs:      captchaTs,
 		CaptchaAttempt: captchaAttempt,
@@ -204,7 +219,7 @@ func solveVkCaptcha(ctx context.Context, captchaErr *vkCaptchaError, dialer *dns
 		return "", fmt.Errorf("no session_token in redirect_uri")
 	}
 
-	powInput, difficulty, err := fetchPowInput(ctx, captchaErr.RedirectUri, dialer)
+	powInput, difficulty, err := fetchPowInput(ctx, captchaErr.RedirectURI, dialer)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch PoW input: %w", err)
 	}
@@ -220,8 +235,8 @@ func solveVkCaptcha(ctx context.Context, captchaErr *vkCaptchaError, dialer *dns
 	return successToken, nil
 }
 
-func fetchPowInput(ctx context.Context, redirectUri string, dialer *dnsdialer.Dialer) (string, int, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", redirectUri, nil)
+func fetchPowInput(ctx context.Context, redirectURI string, dialer *dnsdialer.Dialer) (string, int, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", redirectURI, nil)
 	if err != nil {
 		return "", 0, err
 	}
@@ -361,8 +376,8 @@ func callCaptchaNotRobot(ctx context.Context, sessionToken, hash string, dialer 
 	if !ok {
 		return "", fmt.Errorf("invalid check response: %v", checkResp)
 	}
-	status, _ := respObj["status"].(string)
-	if status != "OK" {
+	status, ok := respObj["status"].(string)
+	if !ok || status != "OK" {
 		return "", fmt.Errorf("check status: %s", status)
 	}
 	successToken, ok := respObj["success_token"].(string)
@@ -481,8 +496,8 @@ func getVkCreds(link string, dialer *dnsdialer.Dialer) (string, string, string, 
 
 		// Check for captcha error
 		if errObj, hasErr := resp["error"].(map[string]interface{}); hasErr {
-			errCode, _ := errObj["error_code"].(float64)
-			if errCode == 14 {
+			errCode, ok2 := errObj["error_code"].(float64)
+			if ok2 && errCode == 14 {
 				if attempt == maxCaptchaAttempts {
 					return "", "", "", fmt.Errorf("captcha failed after %d attempts", maxCaptchaAttempts)
 				}
@@ -512,12 +527,12 @@ func getVkCreds(link string, dialer *dnsdialer.Dialer) (string, string, string, 
 			return "", "", "", fmt.Errorf("VK API error: %v", errObj)
 		}
 
-		respMap, ok := resp["response"].(map[string]interface{})
-		if !ok {
+		respMap, okLoop := resp["response"].(map[string]interface{})
+		if !okLoop {
 			return "", "", "", fmt.Errorf("unexpected getAnonymousToken response: %v", resp)
 		}
-		token2, ok = respMap["token"].(string)
-		if !ok {
+		token2, okLoop = respMap["token"].(string)
+		if !okLoop {
 			return "", "", "", fmt.Errorf("missing token in response: %v", resp)
 		}
 		break
@@ -531,7 +546,10 @@ func getVkCreds(link string, dialer *dnsdialer.Dialer) (string, string, string, 
 		return "", "", "", fmt.Errorf("request error:%s", err)
 	}
 
-	token3 := resp["session_key"].(string)
+	token3, ok := resp["session_key"].(string)
+	if !ok {
+		return "", "", "", fmt.Errorf("missing session_key in response: %v", resp)
+	}
 
 	data = fmt.Sprintf("joinLink=%s&isVideo=false&protocolVersion=5&anonymToken=%s&method=vchat.joinConversationByLink&format=JSON&application_key=CGMMEJLGDIHBABABA&session_key=%s", link, token2, token3)
 	url = "https://calls.okcdn.ru/fb.do"
@@ -541,9 +559,30 @@ func getVkCreds(link string, dialer *dnsdialer.Dialer) (string, string, string, 
 		return "", "", "", fmt.Errorf("request error:%s", err)
 	}
 
-	user := resp["turn_server"].(map[string]interface{})["username"].(string)
-	pass := resp["turn_server"].(map[string]interface{})["credential"].(string)
-	turn := resp["turn_server"].(map[string]interface{})["urls"].([]interface{})[0].(string)
+	turnServer, ok2 := resp["turn_server"].(map[string]interface{})
+	if !ok2 {
+		return "", "", "", fmt.Errorf("missing turn_server in response: %v", resp)
+	}
+
+	user, ok2 := turnServer["username"].(string)
+	if !ok2 {
+		return "", "", "", fmt.Errorf("missing username in turn_server: %v", turnServer)
+	}
+
+	pass, ok2 := turnServer["credential"].(string)
+	if !ok2 {
+		return "", "", "", fmt.Errorf("missing credential in turn_server: %v", turnServer)
+	}
+
+	urls, ok2 := turnServer["urls"].([]interface{})
+	if !ok2 || len(urls) == 0 {
+		return "", "", "", fmt.Errorf("missing or empty urls in turn_server: %v", turnServer)
+	}
+
+	turn, ok2 := urls[0].(string)
+	if !ok2 {
+		return "", "", "", fmt.Errorf("first url is not a string: %v", urls[0])
+	}
 
 	clean := strings.Split(turn, "?")[0]
 	address := strings.TrimPrefix(strings.TrimPrefix(clean, "turn:"), "turns:")
@@ -655,7 +694,7 @@ func getYandexCreds(link string) (string, string, string, error) {
 	}
 
 	type WSSAck struct {
-		Uid string `json:"uid"`
+		UID string `json:"uid"`
 		Ack struct {
 			Status struct {
 				Code string `json:"code"`
@@ -664,8 +703,8 @@ func getYandexCreds(link string) (string, string, string, error) {
 	}
 
 	type WSSData struct {
-		ParticipantId string
-		RoomId        string
+		ParticipantID string
+		RoomID        string
 		Credentials   string
 		Wss           string
 	}
@@ -701,8 +740,11 @@ func getYandexCreds(link string) (string, string, string, error) {
 		}
 	}()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", "", "", fmt.Errorf("GetConference: status=%s body=%s", resp.Status, string(body))
+		readBody, err2 := io.ReadAll(resp.Body)
+		if err2 != nil {
+			return "", "", "", fmt.Errorf("GetConference: status=%s (failed to read body: %v)", resp.Status, err2)
+		}
+		return "", "", "", fmt.Errorf("GetConference: status=%s body=%s", resp.Status, string(readBody))
 	}
 
 	var result ConferenceResponse
@@ -710,8 +752,8 @@ func getYandexCreds(link string) (string, string, string, error) {
 		return "", "", "", fmt.Errorf("decode conf: %v", err)
 	}
 	data := WSSData{
-		ParticipantId: result.PeerID,
-		RoomId:        result.RoomID,
+		ParticipantID: result.PeerID,
+		RoomID:        result.RoomID,
 		Credentials:   result.Credentials,
 		Wss:           result.ClientConfiguration.MediaServerURL,
 	}
@@ -723,9 +765,16 @@ func getYandexCreds(link string) (string, string, string, error) {
 	defer cancel()
 
 	dialer := websocket.Dialer{}
-	conn, _, err := dialer.DialContext(ctx, data.Wss, h)
+	var conn *websocket.Conn
+	conn, resp, err = dialer.DialContext(ctx, data.Wss, h)
 	if err != nil {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
 		return "", "", "", fmt.Errorf("ws dial: %w", err)
+	}
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
 	}
 	defer func() {
 		if closeErr := conn.Close(); closeErr != nil {
@@ -752,8 +801,8 @@ func getYandexCreds(link string) (string, string, string, error) {
 			SendVideo:   false,
 			SendSharing: false,
 
-			ParticipantID: data.ParticipantId,
-			RoomID:        data.RoomId,
+			ParticipantID: data.ParticipantID,
+			RoomID:        data.RoomID,
 			ServiceName:   "telemost",
 			Credentials:   data.Credentials,
 			SdkInfo: SdkInfo{
@@ -795,8 +844,12 @@ func getYandexCreds(link string) (string, string, string, error) {
 	}
 
 	if debug {
-		b, _ := json.MarshalIndent(req1, "", "  ")
-		log.Printf("Sending HELLO:\n%s", string(b))
+		b, err2 := json.MarshalIndent(req1, "", "  ")
+		if err2 != nil {
+			log.Printf("Failed to marshal HELLO: %v", err2)
+		} else {
+			log.Printf("Sending HELLO:\n%s", string(b))
+		}
 	}
 
 	if err := conn.WriteJSON(req1); err != nil {
@@ -873,7 +926,7 @@ func dtlsFunc(ctx context.Context, conn net.PacketConn, peer *net.UDPAddr) (net.
 
 func oneDtlsConnection(ctx context.Context, peer *net.UDPAddr, listenConn net.PacketConn, connchan chan<- net.PacketConn, okchan chan<- struct{}, c chan<- error) {
 	time.Sleep(time.Duration(rand.Intn(400)+100) * time.Millisecond)
-	var err error = nil
+	var err error
 	defer func() { c <- err }()
 	dtlsctx, dtlscancel := context.WithCancel(ctx)
 	defer dtlscancel()
@@ -1008,7 +1061,7 @@ type turnParams struct {
 
 func oneTurnConnection(ctx context.Context, turnParams *turnParams, peer *net.UDPAddr, conn2 net.PacketConn, c chan<- error) {
 	time.Sleep(time.Duration(rand.Intn(400)+100) * time.Millisecond)
-	var err error = nil
+	var err error
 	defer func() { c <- err }()
 	user, pass, url, err1 := turnParams.getCreds(turnParams.link)
 	if err1 != nil {
@@ -1028,13 +1081,13 @@ func oneTurnConnection(ctx context.Context, turnParams *turnParams, peer *net.UD
 	}
 	var turnServerAddr string
 	turnServerAddr = net.JoinHostPort(urlhost, urlport)
-	turnServerUdpAddr, err1 := net.ResolveUDPAddr("udp", turnServerAddr)
+	turnServerUDPAddr, err1 := net.ResolveUDPAddr("udp", turnServerAddr)
 	if err1 != nil {
 		err = fmt.Errorf("failed to resolve TURN server address: %s", err1)
 		return
 	}
-	turnServerAddr = turnServerUdpAddr.String()
-	fmt.Println(turnServerUdpAddr.IP)
+	turnServerAddr = turnServerUDPAddr.String()
+	fmt.Println(turnServerUDPAddr.IP)
 	// Dial TURN Server
 	var cfg *turn.ClientConfig
 	var turnConn net.PacketConn
@@ -1042,7 +1095,7 @@ func oneTurnConnection(ctx context.Context, turnParams *turnParams, peer *net.UD
 	ctx1, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	if turnParams.udp {
-		conn, err2 := net.DialUDP("udp", nil, turnServerUdpAddr) // nolint: noctx
+		conn, err2 := net.DialUDP("udp", nil, turnServerUDPAddr) // nolint: noctx
 		if err2 != nil {
 			err = fmt.Errorf("failed to connect to TURN server: %s", err2)
 			return
@@ -1514,7 +1567,7 @@ func runTCPMode(ctx context.Context, tp *turnParams, peer *net.UDPAddr, listenAd
 	if err != nil {
 		log.Panicf("TCP listen: %s", err)
 	}
-	context.AfterFunc(ctx, func() { listener.Close() })
+	context.AfterFunc(ctx, func() { _ = listener.Close() })
 	log.Printf("TCP mode: listening on %s (round-robin across %d sessions)", listenAddr, numSessions)
 
 	var wgConn sync.WaitGroup
@@ -1535,20 +1588,20 @@ func runTCPMode(ctx context.Context, tp *turnParams, peer *net.UDPAddr, listenAd
 		sess := pool.pick()
 		if sess == nil || sess.IsClosed() {
 			log.Printf("No active sessions, rejecting connection")
-			tcpConn.Close()
+			_ = tcpConn.Close()
 			continue
 		}
 
 		wgConn.Add(1)
 		go func(tc net.Conn, s *smux.Session) {
 			defer wgConn.Done()
-			defer tc.Close()
+			defer func() { _ = tc.Close() }()
 			stream, err := s.OpenStream()
 			if err != nil {
 				log.Printf("smux open stream error: %s", err)
 				return
 			}
-			defer stream.Close()
+			defer func() { _ = stream.Close() }()
 			pipe(ctx, tc, stream)
 		}(tcpConn, sess)
 	}
@@ -1625,31 +1678,31 @@ func createSmuxSession(ctx context.Context, tp *turnParams, peer *net.UDPAddr) (
 		urlport = tp.port
 	}
 	turnServerAddr := net.JoinHostPort(urlhost, urlport)
-	turnServerUdpAddr, err := net.ResolveUDPAddr("udp", turnServerAddr)
+	turnServerUDPAddr, err := net.ResolveUDPAddr("udp", turnServerAddr)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve TURN addr: %w", err)
 	}
-	turnServerAddr = turnServerUdpAddr.String()
+	turnServerAddr = turnServerUDPAddr.String()
 
 	// 2. Connect to TURN server
 	var turnConn net.PacketConn
 	ctx1, cancel1 := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel1()
 	if tp.udp {
-		conn, err := net.DialUDP("udp", nil, turnServerUdpAddr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("dial TURN (udp): %w", err)
+		c, err1 := net.DialUDP("udp", nil, turnServerUDPAddr)
+		if err1 != nil {
+			return nil, nil, fmt.Errorf("dial TURN (udp): %w", err1)
 		}
-		cleanupFns = append(cleanupFns, func() { conn.Close() })
-		turnConn = &connectedUDPConn{conn}
+		cleanupFns = append(cleanupFns, func() { _ = c.Close() })
+		turnConn = &connectedUDPConn{c}
 	} else {
 		var d net.Dialer
-		conn, err := d.DialContext(ctx1, "tcp", turnServerAddr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("dial TURN (tcp): %w", err)
+		c, err1 := d.DialContext(ctx1, "tcp", turnServerAddr)
+		if err1 != nil {
+			return nil, nil, fmt.Errorf("dial TURN (tcp): %w", err1)
 		}
-		cleanupFns = append(cleanupFns, func() { conn.Close() })
-		turnConn = turn.NewSTUNConn(conn)
+		cleanupFns = append(cleanupFns, func() { _ = c.Close() })
+		turnConn = turn.NewSTUNConn(c)
 	}
 
 	// 3. Create TURN client and allocate relay
@@ -1683,7 +1736,7 @@ func createSmuxSession(ctx context.Context, tp *turnParams, peer *net.UDPAddr) (
 		cleanup()
 		return nil, nil, fmt.Errorf("TURN allocate: %w", err)
 	}
-	cleanupFns = append(cleanupFns, func() { relayConn.Close() })
+	cleanupFns = append(cleanupFns, func() { _ = relayConn.Close() })
 	log.Printf("relayed-address=%s", relayConn.LocalAddr().String())
 
 	// 4. Establish DTLS over TURN relay
@@ -1708,11 +1761,11 @@ func createSmuxSession(ctx context.Context, tp *turnParams, peer *net.UDPAddr) (
 	ctx2, cancel2 := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel2()
 	if err = dtlsConn.HandshakeContext(ctx2); err != nil {
-		dtlsConn.Close()
+		_ = dtlsConn.Close()
 		cleanup()
 		return nil, nil, fmt.Errorf("DTLS handshake: %w", err)
 	}
-	cleanupFns = append(cleanupFns, func() { dtlsConn.Close() })
+	cleanupFns = append(cleanupFns, func() { _ = dtlsConn.Close() })
 	log.Printf("DTLS connection established")
 
 	// 5. Create KCP session over DTLS
@@ -1721,7 +1774,7 @@ func createSmuxSession(ctx context.Context, tp *turnParams, peer *net.UDPAddr) (
 		cleanup()
 		return nil, nil, fmt.Errorf("KCP session: %w", err)
 	}
-	cleanupFns = append(cleanupFns, func() { kcpSess.Close() })
+	cleanupFns = append(cleanupFns, func() { _ = kcpSess.Close() })
 	log.Printf("KCP session established")
 
 	// 6. Create smux client session over KCP
@@ -1730,7 +1783,7 @@ func createSmuxSession(ctx context.Context, tp *turnParams, peer *net.UDPAddr) (
 		cleanup()
 		return nil, nil, fmt.Errorf("smux client: %w", err)
 	}
-	cleanupFns = append(cleanupFns, func() { smuxSess.Close() })
+	cleanupFns = append(cleanupFns, func() { _ = smuxSess.Close() })
 	log.Printf("smux session established")
 
 	return smuxSess, cleanup, nil
@@ -1760,8 +1813,12 @@ func (r *relayPacketConn) SetWriteDeadline(t time.Time) error { return r.relay.S
 func pipe(ctx context.Context, c1, c2 net.Conn) {
 	ctx2, cancel := context.WithCancel(ctx)
 	context.AfterFunc(ctx2, func() {
-		_ = c1.SetDeadline(time.Now())
-		_ = c2.SetDeadline(time.Now())
+		if err := c1.SetDeadline(time.Now()); err != nil {
+			log.Printf("pipe: failed to set deadline c1: %v", err)
+		}
+		if err := c2.SetDeadline(time.Now()); err != nil {
+			log.Printf("pipe: failed to set deadline c2: %v", err)
+		}
 	})
 
 	var wg sync.WaitGroup
@@ -1769,14 +1826,22 @@ func pipe(ctx context.Context, c1, c2 net.Conn) {
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		_, _ = io.Copy(c1, c2)
+		if _, err := io.Copy(c1, c2); err != nil {
+			log.Printf("pipe: c1<-c2 copy error: %v", err)
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		_, _ = io.Copy(c2, c1)
+		if _, err := io.Copy(c2, c1); err != nil {
+			log.Printf("pipe: c2<-c1 copy error: %v", err)
+		}
 	}()
 	wg.Wait()
-	_ = c1.SetDeadline(time.Time{})
-	_ = c2.SetDeadline(time.Time{})
+	if err := c1.SetDeadline(time.Time{}); err != nil {
+		log.Printf("pipe: failed to reset deadline c1: %v", err)
+	}
+	if err := c2.SetDeadline(time.Time{}); err != nil {
+		log.Printf("pipe: failed to reset deadline c2: %v", err)
+	}
 }

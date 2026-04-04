@@ -167,7 +167,7 @@ func handleUDPConnection(ctx context.Context, conn net.Conn, connectAddr string)
 				return
 			}
 
-			if err1 := serverConn.SetWriteDeadline(time.Now().Add(time.Minute * 30)); err1 != nil {
+			if err1 = serverConn.SetWriteDeadline(time.Now().Add(time.Minute * 30)); err1 != nil {
 				log.Printf("Failed: %s", err1)
 				return
 			}
@@ -198,7 +198,7 @@ func handleUDPConnection(ctx context.Context, conn net.Conn, connectAddr string)
 				return
 			}
 
-			if err1 := conn.SetWriteDeadline(time.Now().Add(time.Minute * 30)); err1 != nil {
+			if err1 = conn.SetWriteDeadline(time.Now().Add(time.Minute * 30)); err1 != nil {
 				log.Printf("Failed: %s", err1)
 				return
 			}
@@ -221,7 +221,7 @@ func handleTCPConnection(ctx context.Context, dtlsConn net.Conn, connectAddr str
 		log.Printf("KCP session error: %s", err)
 		return
 	}
-	defer kcpSess.Close()
+	defer func() { _ = kcpSess.Close() }()
 	log.Printf("KCP session established (server)")
 
 	// 2. Create smux server session over KCP
@@ -230,7 +230,7 @@ func handleTCPConnection(ctx context.Context, dtlsConn net.Conn, connectAddr str
 		log.Printf("smux server error: %s", err)
 		return
 	}
-	defer smuxSess.Close()
+	defer func() { _ = smuxSess.Close() }()
 	log.Printf("smux session established (server)")
 
 	// 3. Accept smux streams and forward to backend via TCP
@@ -249,7 +249,7 @@ func handleTCPConnection(ctx context.Context, dtlsConn net.Conn, connectAddr str
 		wg.Add(1)
 		go func(s *smux.Stream) {
 			defer wg.Done()
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			// Connect to backend (Xray/VLESS)
 			backendConn, err := net.DialTimeout("tcp", connectAddr, 10*time.Second)
@@ -257,7 +257,7 @@ func handleTCPConnection(ctx context.Context, dtlsConn net.Conn, connectAddr str
 				log.Printf("backend dial error: %s", err)
 				return
 			}
-			defer backendConn.Close()
+			defer func() { _ = backendConn.Close() }()
 
 			// Bidirectional copy
 			pipeConn(ctx, s, backendConn)
@@ -270,8 +270,12 @@ func handleTCPConnection(ctx context.Context, dtlsConn net.Conn, connectAddr str
 func pipeConn(ctx context.Context, c1, c2 net.Conn) {
 	ctx2, cancel := context.WithCancel(ctx)
 	context.AfterFunc(ctx2, func() {
-		_ = c1.SetDeadline(time.Now())
-		_ = c2.SetDeadline(time.Now())
+		if err := c1.SetDeadline(time.Now()); err != nil {
+			log.Printf("pipeConn: failed to set deadline c1: %v", err)
+		}
+		if err := c2.SetDeadline(time.Now()); err != nil {
+			log.Printf("pipeConn: failed to set deadline c2: %v", err)
+		}
 	})
 
 	var wg sync.WaitGroup
@@ -279,14 +283,22 @@ func pipeConn(ctx context.Context, c1, c2 net.Conn) {
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		_, _ = io.Copy(c1, c2)
+		if _, err := io.Copy(c1, c2); err != nil {
+			log.Printf("pipeConn: c1<-c2 copy error: %v", err)
+		}
 	}()
 	go func() {
 		defer wg.Done()
 		defer cancel()
-		_, _ = io.Copy(c2, c1)
+		if _, err := io.Copy(c2, c1); err != nil {
+			log.Printf("pipeConn: c2<-c1 copy error: %v", err)
+		}
 	}()
 	wg.Wait()
-	_ = c1.SetDeadline(time.Time{})
-	_ = c2.SetDeadline(time.Time{})
+	if err := c1.SetDeadline(time.Time{}); err != nil {
+		log.Printf("pipeConn: failed to reset deadline c1: %v", err)
+	}
+	if err := c2.SetDeadline(time.Time{}); err != nil {
+		log.Printf("pipeConn: failed to reset deadline c2: %v", err)
+	}
 }

@@ -22,7 +22,6 @@ import (
 	neturl "net/url"
 	"os"
 	"os/signal"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -66,6 +65,7 @@ var (
 	handshakeSem         = make(chan struct{}, 3)
 	isDebug              bool
 	manualCaptcha        bool
+	autoCaptchaSliderPOC bool
 )
 
 type UDPPacket struct {
@@ -307,17 +307,30 @@ func solveVkCaptcha(ctx context.Context, captchaErr *VkCaptchaError, streamID in
 		return "", fmt.Errorf("no redirect_uri for auto-solve")
 	}
 
-	powInput, difficulty, err := fetchPowInput(ctx, captchaErr.RedirectUri, client, profile)
+	bootstrap, err := fetchCaptchaBootstrap(ctx, captchaErr.RedirectUri, client, profile)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch PoW input: %w", err)
+		return "", fmt.Errorf("failed to fetch captcha bootstrap: %w", err)
 	}
 
-	log.Printf("[STREAM %d] [Captcha] PoW input: %s, difficulty: %d", streamID, powInput, difficulty)
+	log.Printf("[STREAM %d] [Captcha] PoW input: %s, difficulty: %d", streamID, bootstrap.PowInput, bootstrap.Difficulty)
 
-	hash := solvePoW(powInput, difficulty)
+	hash := solvePoW(bootstrap.PowInput, bootstrap.Difficulty)
 	log.Printf("[STREAM %d] [Captcha] PoW solved: hash=%s", streamID, hash)
 
-	successToken, err := callCaptchaNotRobot(ctx, captchaErr.SessionToken, hash, streamID, client, profile)
+	var successToken string
+	if autoCaptchaSliderPOC {
+		successToken, err = callCaptchaNotRobotWithSliderPOC(
+			ctx,
+			captchaErr.SessionToken,
+			hash,
+			streamID,
+			client,
+			profile,
+			bootstrap.Settings,
+		)
+	} else {
+		successToken, err = callCaptchaNotRobot(ctx, captchaErr.SessionToken, hash, streamID, client, profile)
+	}
 	if err != nil {
 		return "", fmt.Errorf("captchaNotRobot API failed: %w", err)
 	}
@@ -326,16 +339,16 @@ func solveVkCaptcha(ctx context.Context, captchaErr *VkCaptchaError, streamID in
 	return successToken, nil
 }
 
-func fetchPowInput(ctx context.Context, redirectUri string, client tlsclient.HttpClient, profile Profile) (string, int, error) {
+func fetchCaptchaBootstrap(ctx context.Context, redirectUri string, client tlsclient.HttpClient, profile Profile) (*captchaBootstrap, error) {
 	parsedURL, err := neturl.Parse(redirectUri)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
 	domain := parsedURL.Hostname()
 
 	req, err := fhttp.NewRequestWithContext(ctx, "GET", redirectUri, nil)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
 
 	req.Host = domain
@@ -347,7 +360,7 @@ func fetchPowInput(ctx context.Context, redirectUri string, client tlsclient.Htt
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -355,26 +368,9 @@ func fetchPowInput(ctx context.Context, redirectUri string, client tlsclient.Htt
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", 0, err
+		return nil, err
 	}
-	html := string(body)
-
-	powInputRe := regexp.MustCompile(`const\s+powInput\s*=\s*"([^"]+)"`)
-	powInputMatch := powInputRe.FindStringSubmatch(html)
-	if len(powInputMatch) < 2 {
-		return "", 0, fmt.Errorf("powInput not found in captcha HTML")
-	}
-	powInput := powInputMatch[1]
-
-	diffRe := regexp.MustCompile(`startsWith\('0'\.repeat\((\d+)\)\)`)
-	diffMatch := diffRe.FindStringSubmatch(html)
-	difficulty := 2
-	if len(diffMatch) >= 2 {
-		if d, err := strconv.Atoi(diffMatch[1]); err == nil {
-			difficulty = d
-		}
-	}
-	return powInput, difficulty, nil
+	return parseCaptchaBootstrapHTML(string(body))
 }
 
 func solvePoW(powInput string, difficulty int) string {
@@ -1679,6 +1675,7 @@ func main() {
 	direct := flag.Bool("no-dtls", false, "connect without obfuscation. DO NOT USE")
 	debugFlag := flag.Bool("debug", false, "enable debug logging")
 	manualCaptchaFlag := flag.Bool("manual-captcha", false, "skip auto captcha solving, use manual mode immediately")
+	autoCaptchaSliderPOCFlag := flag.Bool("auto-captcha-slider-poc", false, "experimental: try local slider captcha solving before manual fallback")
 	flag.Parse()
 	if *peerAddr == "" {
 		log.Panicf("Need peer address!")
@@ -1693,6 +1690,10 @@ func main() {
 
 	isDebug = *debugFlag
 	manualCaptcha = *manualCaptchaFlag
+	autoCaptchaSliderPOC = *autoCaptchaSliderPOCFlag && !manualCaptcha
+	if *autoCaptchaSliderPOCFlag && manualCaptcha {
+		log.Printf("[Captcha] manual-captcha enabled, ignoring -auto-captcha-slider-poc")
+	}
 
 	var link string
 	var getCreds getCredsFunc

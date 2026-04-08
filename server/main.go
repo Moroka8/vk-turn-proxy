@@ -20,7 +20,6 @@ import (
 	"github.com/xtaci/smux"
 )
 
-
 func main() {
 	listen := flag.String("listen", "0.0.0.0:56000", "listen on ip:port")
 	connect := flag.String("connect", "", "connect to ip:port")

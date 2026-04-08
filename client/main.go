@@ -245,91 +245,91 @@ type VkCaptchaError struct {
 }
 
 func ParseVkCaptchaError(errData map[string]interface{}) *VkCaptchaError {
-    // Extract error_code
-    codeFloat, ok := errData["error_code"].(float64)
-    if !ok {
-        log.Printf("missing error_code in captcha error data")
-        return nil
-    }
-    code := int(codeFloat)
+	// Extract error_code
+	codeFloat, ok := errData["error_code"].(float64)
+	if !ok {
+		log.Printf("missing error_code in captcha error data")
+		return nil
+	}
+	code := int(codeFloat)
 
-    // Extract redirect_uri
-    RedirectURI, ok := errData["redirect_uri"].(string)
-    if !ok {
-        log.Printf("missing redirect_uri in captcha error data")
-        return nil
-    }
+	// Extract redirect_uri
+	RedirectURI, ok := errData["redirect_uri"].(string)
+	if !ok {
+		log.Printf("missing redirect_uri in captcha error data")
+		return nil
+	}
 
-    // Extract captcha_sid
-    captchaSid, ok := errData["captcha_sid"].(string)
-    if !ok {
-        // try numeric
-        if sidNum, ok2 := errData["captcha_sid"].(float64); ok2 {
-            captchaSid = fmt.Sprintf("%.0f", sidNum)
-        } else {
-            log.Printf("missing captcha_sid in captcha error data")
-            return nil
-        }
-    }
+	// Extract captcha_sid
+	captchaSid, ok := errData["captcha_sid"].(string)
+	if !ok {
+		// try numeric
+		if sidNum, ok2 := errData["captcha_sid"].(float64); ok2 {
+			captchaSid = fmt.Sprintf("%.0f", sidNum)
+		} else {
+			log.Printf("missing captcha_sid in captcha error data")
+			return nil
+		}
+	}
 
-    // Extract captcha_img
-    captchaImg, ok := errData["captcha_img"].(string)
-    if !ok {
-        log.Printf("missing captcha_img in captcha error data")
-        return nil
-    }
+	// Extract captcha_img
+	captchaImg, ok := errData["captcha_img"].(string)
+	if !ok {
+		log.Printf("missing captcha_img in captcha error data")
+		return nil
+	}
 
-    // Extract error_msg
-    errorMsg, ok := errData["error_msg"].(string)
-    if !ok {
-        log.Printf("missing error_msg in captcha error data")
-        return nil
-    }
+	// Extract error_msg
+	errorMsg, ok := errData["error_msg"].(string)
+	if !ok {
+		log.Printf("missing error_msg in captcha error data")
+		return nil
+	}
 
-    // Extract session token if redirect_uri present
-    var sessionToken string
-    if RedirectURI != "" {
-        if parsed, err := neturl.Parse(RedirectURI); err == nil {
-            sessionToken = parsed.Query().Get("session_token")
-        } else {
-            log.Printf("failed to parse redirect_uri: %v", err)
-            return nil
-        }
-    }
+	// Extract session token if redirect_uri present
+	var sessionToken string
+	if RedirectURI != "" {
+		if parsed, err := neturl.Parse(RedirectURI); err == nil {
+			sessionToken = parsed.Query().Get("session_token")
+		} else {
+			log.Printf("failed to parse redirect_uri: %v", err)
+			return nil
+		}
+	}
 
-    // Extract is_sound_captcha_available
-    isSound, ok := errData["is_sound_captcha_available"].(bool)
-    if !ok {
-        isSound = false
-    }
+	// Extract is_sound_captcha_available
+	isSound, ok := errData["is_sound_captcha_available"].(bool)
+	if !ok {
+		isSound = false
+	}
 
-    // Extract captcha_ts
-    var captchaTs string
-    if tsFloat, ok := errData["captcha_ts"].(float64); ok {
-        captchaTs = fmt.Sprintf("%.0f", tsFloat)
-    } else if tsStr, ok := errData["captcha_ts"].(string); ok {
-        captchaTs = tsStr
-    }
+	// Extract captcha_ts
+	var captchaTs string
+	if tsFloat, ok := errData["captcha_ts"].(float64); ok {
+		captchaTs = fmt.Sprintf("%.0f", tsFloat)
+	} else if tsStr, ok := errData["captcha_ts"].(string); ok {
+		captchaTs = tsStr
+	}
 
-    // Extract captcha_attempt
-    var captchaAttempt string
-    if attFloat, ok := errData["captcha_attempt"].(float64); ok {
-        captchaAttempt = fmt.Sprintf("%.0f", attFloat)
-    } else if attStr, ok := errData["captcha_attempt"].(string); ok {
-        captchaAttempt = attStr
-    }
+	// Extract captcha_attempt
+	var captchaAttempt string
+	if attFloat, ok := errData["captcha_attempt"].(float64); ok {
+		captchaAttempt = fmt.Sprintf("%.0f", attFloat)
+	} else if attStr, ok := errData["captcha_attempt"].(string); ok {
+		captchaAttempt = attStr
+	}
 
-    // Build VkCaptchaError
-    return &VkCaptchaError{
-        ErrorCode:      code,
-        ErrorMsg:       errorMsg,
-        CaptchaSid:     captchaSid,
-        CaptchaImg:     captchaImg,
-        RedirectURI:    RedirectURI,
-        IsSoundCaptchaAvailable: isSound,
-        SessionToken:   sessionToken,
-        CaptchaTs:      captchaTs,
-        CaptchaAttempt: captchaAttempt,
+	// Build VkCaptchaError
+	return &VkCaptchaError{
+		ErrorCode:               code,
+		ErrorMsg:                errorMsg,
+		CaptchaSid:              captchaSid,
+		CaptchaImg:              captchaImg,
+		RedirectURI:             RedirectURI,
+		IsSoundCaptchaAvailable: isSound,
+		SessionToken:            sessionToken,
+		CaptchaTs:               captchaTs,
+		CaptchaAttempt:          captchaAttempt,
 	}
 }
 
@@ -1003,7 +1003,7 @@ func getTokenChain(ctx context.Context, link string, streamID int, creds VKCrede
 	}
 	token3, ok := resp["session_key"].(string)
 	if !ok {
-    	return "", "", "", fmt.Errorf("missing session_key in response: %v", resp)
+		return "", "", "", fmt.Errorf("missing session_key in response: %v", resp)
 	}
 
 	vkDelayRandom(100, 150)

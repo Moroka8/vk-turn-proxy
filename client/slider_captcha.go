@@ -272,7 +272,6 @@ func callCaptchaNotRobotWithSliderPOC(
 			streamID,
 			err,
 		)
-		// Fallback: maybe it's just a checkbox that needs a human-like check
 		time.Sleep(300 * time.Millisecond)
 		finalCheck, err2 := session.requestCheckboxCheck()
 		if err2 == nil && finalCheck.Status == "OK" {

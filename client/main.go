@@ -328,7 +328,7 @@ func ParseVkCaptchaError(errData map[string]interface{}) *VkCaptchaError {
 		return nil
 	}
 
-	// Extract session token if redirect_uri present
+	// Extract session token
 	var sessionToken string
 	if RedirectURI != "" {
 		if parsed, err := neturl.Parse(RedirectURI); err == nil {
@@ -336,6 +336,12 @@ func ParseVkCaptchaError(errData map[string]interface{}) *VkCaptchaError {
 		} else {
 			log.Printf("failed to parse redirect_uri: %v", err)
 			return nil
+		}
+	}
+	// Fallback to top-level session_token field if not in redirect_uri
+	if sessionToken == "" {
+		if st, ok := errData["session_token"].(string); ok {
+			sessionToken = st
 		}
 	}
 
@@ -1783,7 +1789,31 @@ func oneTurnConnectionLoop(ctx context.Context, turnParams *turnParams, peer *ne
 	}
 }
 
+func setupGlobalResolver() {
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	dnsServers := []string{"77.88.8.8:53", "77.88.8.1:53", "8.8.8.8:53", "8.8.4.4:53", "1.1.1.1:53", "1.0.0.1:53"}
+
+	net.DefaultResolver = &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			var lastErr error
+			for _, dns := range dnsServers {
+				conn, err := dialer.DialContext(ctx, "udp", dns)
+				if err == nil {
+					return conn, nil
+				}
+				lastErr = err
+			}
+			return nil, lastErr
+		},
+	}
+}
+
 func main() {
+	setupGlobalResolver()
 	ctx, cancel := context.WithCancel(context.Background())
 	globalAppCancel = cancel
 	defer cancel()
@@ -2047,12 +2077,15 @@ func runVLESSMode(ctx context.Context, tp *turnParams, peer *net.UDPAddr, listen
 	if err != nil {
 		log.Panicf("TCP listen: %s", err)
 	}
-	context.AfterFunc(ctx, func() { _ = listener.Close() })
+
+	wrappedListener := listener
+
+	context.AfterFunc(ctx, func() { _ = wrappedListener.Close() })
 	log.Printf("VLESS mode: listening on %s (round-robin across %d sessions)", listenAddr, numSessions)
 
 	var wgConn sync.WaitGroup
 	for {
-		tcpConn, err := listener.Accept()
+		tcpConn, err := wrappedListener.Accept()
 		if err != nil {
 			select {
 			case <-ctx.Done():

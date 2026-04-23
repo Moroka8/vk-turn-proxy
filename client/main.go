@@ -291,7 +291,6 @@ func generateCheckboxCursor() string {
 }
 */
 
-
 func getCustomNetDialer() net.Dialer {
 	return net.Dialer{
 		Timeout:   20 * time.Second,
@@ -610,7 +609,7 @@ func callCaptchaNotRobot(ctx context.Context, sessionToken, hash string, streamI
 	cursorJSON := "[]"
 	answer := base64.StdEncoding.EncodeToString([]byte("{}"))
 
-	// The real browser sends a static SHA-256 hash for debug_info. 
+	// The real browser sends a static SHA-256 hash for debug_info.
 	// We use the exact one captured from the real browser's session.
 	debugInfo := "f3ef768dab7a20f574c6461f34e4257894d2a3c30a53d8727a3edaf7ab70847d"
 

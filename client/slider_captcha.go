@@ -22,6 +22,7 @@ import (
 	fhttp "github.com/bogdanfinn/fhttp"
 	tlsclient "github.com/bogdanfinn/tls-client"
 )
+
 const (
 	sliderCaptchaType     = "slider"
 	defaultSliderAttempts = 4
@@ -240,8 +241,8 @@ func (s *captchaNotRobotSession) requestSliderCheck(activeSteps []int, candidate
 
 func (s *captchaNotRobotSession) requestCheck(cursor string, answer string) (*captchaCheckResult, error) {
 	values := s.baseValues()
-	
-	// The real browser sends a static SHA-256 hash for debug_info. 
+
+	// The real browser sends a static SHA-256 hash for debug_info.
 	// We use the exact one captured from the real browser's session.
 	debugInfo := "f3ef768dab7a20f574c6461f34e4257894d2a3c30a53d8727a3edaf7ab70847d"
 
@@ -978,7 +979,6 @@ func buildSliderCursor(candidateIndex int, candidateCount int, startTime int64) 
 	return string(data)
 }
 */
-
 
 func trySliderCaptchaCandidates(
 	candidates []sliderCandidate,

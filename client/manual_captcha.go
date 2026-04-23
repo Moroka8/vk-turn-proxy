@@ -560,7 +560,7 @@ type loggingTransport struct {
 
 func (t *loggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	isCaptchaRequest := req.Body != nil && (strings.Contains(req.URL.Path, "captchaNotRobot.check") || strings.Contains(req.URL.Path, "captchaNotRobot.componentDone"))
-	
+
 	if isCaptchaRequest {
 		b, _ := io.ReadAll(req.Body)
 		req.Body = io.NopCloser(bytes.NewReader(b))

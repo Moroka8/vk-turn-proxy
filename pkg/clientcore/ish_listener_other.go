@@ -1,6 +1,6 @@
 //go:build !(linux && 386)
 
-package main
+package clientcore
 
 import "net"
 
